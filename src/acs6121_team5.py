@@ -367,8 +367,8 @@ class searching_test():
                     print(f'coordinate_x : {self.target_x}')
                     print(f'coordinate_y : {self.target_y}')
             
-            # Update the map after navigation in every 10 seconds   
-            if rospy.get_time() - self.time > 10:
+            # Update the map after navigation in every 15 seconds   
+            if rospy.get_time() - self.time > 15:
                 self.ros_l.launch(roslaunch.core.Node(
                                         package="map_server",
                                         node_type="map_saver",
