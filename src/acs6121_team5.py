@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# check out more on : https://github.com/MHOONIM/gr5_real_robot_1
+# check out more on : https://github.com/MHOONIM/acs6121_team5
 
 import rospy 
 from geometry_msgs.msg import Twist # import the Twist message for publishing velocity commands:
@@ -138,10 +138,6 @@ class searching_test():
         # a flag if this node has just been launched
         self.startup = True
 
-        # This might be useful in the main_loop() (to switch between 
-        # turning and moving forwards)
-        self.turn = False
-
         # setup a '/cmd_vel' publisher and an '/odom' subscriber:
         self.pub = rospy.Publisher("cmd_vel", Twist, queue_size=10)
         
@@ -149,12 +145,15 @@ class searching_test():
         self.data_scan = scan_subscriber() # <---- create data_scan object that subscribe to the LaserScan topic
         self.tb3_odom = get_odom() # <---- create tb3_odom object that subscribe to the Odometry topic
 
+        # initialise node
         rospy.init_node(node_name, anonymous=True)
         self.rate = rospy.Rate(10)  # hz
 
+        # initialise shutdown parameter
         self.ctrl_c = False
         rospy.on_shutdown(self.shutdownhook)
 
+        # print initialisation message.
         rospy.loginfo(f"the {node_name} node has been initialised...")
 
         self.path_map() # <---- Call the path_map function
@@ -168,7 +167,7 @@ class searching_test():
         self.get_target(self.dest_flag) # get the first destination coordinates
         self.prev_beta = self.tb3_odom.theta_z
         self.beta = self.prev_beta
-
+        # print the first destination coordinates
         print(f'the bot is reaching to the destination {self.dest_flag}')
         print(f'coordinate_x : {self.target_x}')
         print(f'coordinate_y : {self.target_y}')
@@ -180,12 +179,13 @@ class searching_test():
                     args=f"-f {self.map_file}"))
         self.time = rospy.get_time()
 
-        # Initialise PID parameters
+        # Initialise PD parameters
         self.kp = 0.5
         self.kd = 0.1
         self.prev_error = 0
         self.error = 0
 
+    # --------- Shut down attribute -------------------------
     def shutdownhook(self):
         # publish an empty twist message to stop the robot
         # (by default all velocities will be zero):
@@ -235,6 +235,7 @@ class searching_test():
             self.target_y = 1.3
     # --------------------------------------------------------
 
+    # --------------- Main loop of the node ------------------
     def main_loop(self):
 
         while not self.ctrl_c:
@@ -247,12 +248,8 @@ class searching_test():
             # min_nwest_dis = self.data_scan.min_nwest
             # min_west_dis = self.data_scan.min_west
             # min_swest_dis = self.data_scan.min_swest
-            
-            # print(f'The minimum front distance : {min_front_dis}')
-            # print(f'The average front distance : {avg_front_dis}')
-            # print(f'tb3_location_x : {self.tb3_odom.x}')
 
-            # Compute for the angle diff
+            # ************** Compute for the angle difference start ****************
             beta = self.tb3_odom.theta_z
             if beta < 0:
                 beta = pi + (pi + beta)
@@ -274,17 +271,10 @@ class searching_test():
                 # if the target is in the quadrant 4
                 alpha = alpha + (2 * pi)
            
-            a_diff = beta - alpha
+            a_diff = beta - alpha # <----- compute for the angle diff
+            # ************** Compute for the angle difference end ****************
 
-            # print(f'aplha = {alpha}')
-            # print(f'beta = {beta}')
-            # print(f'gamma = {a_diff}')
-            # print(f'target_x : {self.target_x}')
-            # print(f'target_y : {self.target_y}')
-            # print(f'dis_x : {dis_x}')
-            # print(f'dis_y : {dis_y}')
-
-            # Locate the destination by making the angle diff close to 0.
+            # Locate the destination by making the angle diff converge to 0.
             if self.locate == False: 
                 self.error = a_diff
                 angular_speed = (self.kp * self.error) + (self.kd * (self.error - self.prev_error))
@@ -307,25 +297,28 @@ class searching_test():
                     self.locate = True
 
             else:
+                # Do this condition when the target is located.
                 if (self.tb3_odom.x > self.target_x + 0.2 or self.tb3_odom.x < self.target_x - 0.2) or (self.tb3_odom.y > self.target_y + 0.2 or self.tb3_odom.y < self.target_y - 0.2):
                     
-                    #Calculate for the speed
+                    #Calculate for the speed (PD)
                     self.error = math.sqrt((self.target_x - self.tb3_odom.x)**2 + (self.target_y - self.tb3_odom.y)**2)
                     linear_speed = self.error * self.kp + ((self.error - self.prev_error) * self.kd)
                     if linear_speed > 0.26:
-                        linear_speed = 0.26
-                    # print(f'linear_speed = {linear_speed}')
-                    
-                    self.prev_error = self.error
+                        linear_speed = 0.26 # <-- limit the linear velocity to 0.26 m/s
+                    self.prev_error = self.error # <-- store previous error
 
+                    # check the angle difference between the robot and the target
                     if a_diff < 0.1 and a_diff > -0.1:
+                        # if the angle is not diff <-- It means that the robot is facing to the target <-- Move straight
                         if min_front_dis > 0.5:
                             self.vel.linear.x = linear_speed
                             self.vel.angular.z = 0
                         else:
+                            # There is an obstacle in front of the robot.
                             self.vel.linear.x = 0
                             self.vel.angular.z = 0.3
                     else:
+                        # if the robot is facing away from the target <-- Perform wall following
                         if min_front_dis < 0.5:
                             # There's a wall up ahead --> Sharp turn left
                             self.vel.linear.x = 0.0
@@ -364,22 +357,23 @@ class searching_test():
                     self.dest_flag = self.dest_flag + 1 # update destination flag
 
                     if self.dest_flag > 8:
-                        self.dest_flag = 1
+                        self.dest_flag = 1 # <-- Reset the destination flag <-- Going back to the first destination
 
                     self.get_target(self.dest_flag) # get a new destination
                     self.locate = False # clear locating flag
 
+                    # print the next destination coordinates
                     print(f'The next destination is {self.dest_flag}')
                     print(f'coordinate_x : {self.target_x}')
                     print(f'coordinate_y : {self.target_y}')
-
-                    # print(f'rostime = {rospy.get_time()}')
-                    # Update the map after navigation in every 10 seconds
-                    self.ros_l.launch(roslaunch.core.Node(
-                                            package="map_server",
-                                            node_type="map_saver",
-                                            args=f"-f {self.map_file}")) 
-                    self.time = rospy.get_time()   
+            
+            # Update the map after navigation in every 10 seconds   
+            if rospy.get_time() - self.time > 10:
+                self.ros_l.launch(roslaunch.core.Node(
+                                        package="map_server",
+                                        node_type="map_saver",
+                                        args=f"-f {self.map_file}")) 
+                self.time = rospy.get_time()   
 
             # publish whatever velocity command has been set in your code above:
             self.pub.publish(self.vel)
