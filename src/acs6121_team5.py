@@ -367,13 +367,12 @@ class searching_test():
                     print(f'coordinate_x : {self.target_x}')
                     print(f'coordinate_y : {self.target_y}')
             
-            # Update the map after navigation in every 15 seconds   
-            if rospy.get_time() - self.time > 15:
-                self.ros_l.launch(roslaunch.core.Node(
+                    # Update the map after the robot reachs the destination  
+                    self.ros_l.launch(roslaunch.core.Node(
                                         package="map_server",
                                         node_type="map_saver",
                                         args=f"-f {self.map_file}")) 
-                self.time = rospy.get_time()   
+                    self.time = rospy.get_time()   
 
             # publish whatever velocity command has been set in your code above:
             self.pub.publish(self.vel)
